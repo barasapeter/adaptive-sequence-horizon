@@ -75,8 +75,9 @@ def summarize(rows):
         "mean_lift": mean(row.lift for row in forecasts),
         "brier_score": brier,
         "baseline_brier": baseline_brier,
-        "brier_skill": 1.0 - brier / baseline_brier
-            if baseline_brier > 0 else float("nan"),
+        "brier_skill": (
+            1.0 - brier / baseline_brier if baseline_brier > 0 else float("nan")
+        ),
         "log_loss": mean(_log_loss(row.probability, row.hit) for row in forecasts),
         "baseline_log_loss": mean(
             _log_loss(row.baseline_probability, row.hit) for row in forecasts
@@ -104,8 +105,10 @@ def block_bootstrap_lift_interval(rows, horizon, samples, seed):
         draw = []
         while len(draw) < len(values):
             start = rng.randrange(len(values))
-            draw.extend(values[(start + offset) % len(values)] for offset in range(block))
-        estimates.append(mean(draw[:len(values)]))
+            draw.extend(
+                values[(start + offset) % len(values)] for offset in range(block)
+            )
+        estimates.append(mean(draw[: len(values)]))
     estimates.sort()
     low = estimates[int(0.025 * (len(estimates) - 1))]
     high = estimates[int(0.975 * (len(estimates) - 1))]
@@ -118,15 +121,20 @@ def calibration_bins(rows):
     for row in forecasts:
         bins[min(4, int(row.probability * 5))].append(row)
     return [
-        (index, len(group), mean(row.probability for row in group),
-         mean(row.hit for row in group))
-        for index, group in enumerate(bins) if group
+        (
+            index,
+            len(group),
+            mean(row.probability for row in group),
+            mean(row.hit for row in group),
+        )
+        for index, group in enumerate(bins)
+        if group
     ]
 
 
 def _format_window(sequence, n, width=30):
     text = "".join(map(str, sequence[-n:]))
-    return text if len(text) <= width else "..." + text[-(width - 3):]
+    return text if len(text) <= width else "..." + text[-(width - 3) :]
 
 
 def print_head_combinations(sequence, forecast):
@@ -137,7 +145,9 @@ def print_head_combinations(sequence, forecast):
     print(f"{'N':>4}  {'Observed window':<42}  {label:>9}")
     print("-" * 62)
     for n in forecast.contributing_ns:
-        print(f"{n:>4}  {_format_window(sequence, n, 42):<42}  {forecast.suggested_target:>9}")
+        print(
+            f"{n:>4}  {_format_window(sequence, n, 42):<42}  {forecast.suggested_target:>9}"
+        )
     print("-" * 62)
 
 
@@ -146,7 +156,11 @@ def print_prediction_trace(sequence, rows, limit, head_forecast, horizon):
         return
     displayed = rows if limit < 0 else rows[-limit:]
     print()
-    label = f"last {len(displayed)} of {len(rows)}" if len(displayed) < len(rows) else str(len(rows))
+    label = (
+        f"last {len(displayed)} of {len(rows)}"
+        if len(displayed) < len(rows)
+        else str(len(rows))
+    )
     print(f"Prediction trace ({label} opportunities):")
     print("-" * 108)
     print(
@@ -155,13 +169,13 @@ def print_prediction_trace(sequence, rows, limit, head_forecast, horizon):
     )
     print("-" * 108)
     for row in displayed:
-        window = sequence[row.index - row.window_n + 1:row.index + 1]
+        window = sequence[row.index - row.window_n + 1 : row.index + 1]
         window_text = "".join(map(str, window))
         if len(window_text) > 30:
             window_text = "..." + window_text[-27:]
         future_text = " ".join(map(str, row.actual_future))
         if row.abstained:
-            pick, probability, lift, result = "-", "-", "-", "NO SIGNAL"
+            pick, probability, lift, result = "-", "-", "-", "ABSTAIN"
         else:
             pick = str(row.target)
             probability = f"{row.probability:.3f}"
@@ -177,7 +191,7 @@ def print_prediction_trace(sequence, rows, limit, head_forecast, horizon):
     print("." * 108)
     if head_forecast.abstained:
         pick = str(head_forecast.suggested_target)
-        result = "NO SIGNAL"
+        result = "ABSTAIN"
     else:
         pick = str(head_forecast.target)
         result = "PENDING"
@@ -262,7 +276,7 @@ def print_result(sequence, horizon, args):
     print(f"Chronological test fraction: {args.test_fraction:.1%}")
     print(f"Test opportunities:          {result['opportunities']}")
     print(f"Predictions made:            {result['predictions']}")
-    print(f"Abstentions / no signal:     {result['abstentions']}")
+    print(f"Abstentions / ABSTAIN:     {result['abstentions']}")
     print(f"Coverage:                    {result['coverage']:.2%}")
     print(f"Hits:                        {result['hits']}")
     print(f"Misses:                      {result['misses']}")
@@ -292,7 +306,9 @@ def print_result(sequence, horizon, args):
     print("Calibration (predicted vs observed):")
     for index, count, predicted, observed in calibration_bins(rows):
         low, high = index * 20, (index + 1) * 20
-        print(f"  {low:>2}-{high:<3}%  n={count:>5}  predicted={predicted:.3%}  observed={observed:.3%}")
+        print(
+            f"  {low:>2}-{high:<3}%  n={count:>5}  predicted={predicted:.3%}  observed={observed:.3%}"
+        )
 
     null = shuffled_null(sequence, horizon, args, result["brier_skill"])
     if null:
@@ -335,7 +351,8 @@ def main():
     parser.add_argument("--seed", type=int, default=1729)
     parser.add_argument("--show-predictions", type=int, default=20, metavar="COUNT")
     parser.add_argument(
-        "--non-overlap", action="store_true",
+        "--non-overlap",
+        action="store_true",
         help="Evaluate every H observations for a conservative trace.",
     )
     parser.add_argument(
@@ -349,7 +366,11 @@ def main():
     print(f"Loaded observations: {len(sequence)}")
     print(f"Zero count:          {sequence.count(0)}")
     print(f"One count:           {sequence.count(1)}")
-    print("Mode:                non-overlapping" if args.non_overlap else "Mode:                overlapping")
+    print(
+        "Mode:                non-overlapping"
+        if args.non_overlap
+        else "Mode:                overlapping"
+    )
 
     if args.scan_horizons:
         h_min, h_max = args.scan_horizons

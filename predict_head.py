@@ -42,7 +42,7 @@ def build_learner(sequence, args):
 
 def format_window(sequence, n, width=60):
     text = "".join(map(str, sequence[-n:]))
-    return text if len(text) <= width else "..." + text[-(width - 3):]
+    return text if len(text) <= width else "..." + text[-(width - 3) :]
 
 
 def print_picked_combinations(sequence, forecast, horizon):
@@ -121,7 +121,7 @@ def print_historical_performance(rows):
     print("-" * 62)
     print(f"Resolved opportunities:      {result['opportunities']}")
     print(f"Predictions made:            {predicted}")
-    print(f"No signal / abstained:       {result['no_signal']}")
+    print(f"ABSTAIN / abstained:       {result['no_signal']}")
     print(f"Coverage:                    {_rate(predicted, result['opportunities'])}")
     print(f"Hits:                        {result['hits']}")
     print(f"Misses:                      {result['misses']}")
@@ -149,7 +149,7 @@ def print_historical_performance(rows):
 def print_history_continuation(sequence, rows, forecast, args):
     if args.show_predictions == 0:
         return
-    displayed = rows if args.show_predictions < 0 else rows[-args.show_predictions:]
+    displayed = rows if args.show_predictions < 0 else rows[-args.show_predictions :]
     print()
     print(f"Resolved predictions and head continuation ({len(displayed)} historical):")
     print("-" * 108)
@@ -159,13 +159,13 @@ def print_history_continuation(sequence, rows, forecast, args):
     )
     print("-" * 108)
     for row in displayed:
-        window = sequence[row.index - row.window_n + 1:row.index + 1]
+        window = sequence[row.index - row.window_n + 1 : row.index + 1]
         window_text = "".join(map(str, window))
         if len(window_text) > 30:
             window_text = "..." + window_text[-27:]
         reveal = " ".join(map(str, row.actual_future))
         if row.abstained:
-            pick, probability, lift, result = "-", "-", "-", "NO SIGNAL"
+            pick, probability, lift, result = "-", "-", "-", "ABSTAIN"
         else:
             pick = str(row.target)
             probability = f"{row.probability:.3f}"
@@ -178,7 +178,7 @@ def print_history_continuation(sequence, rows, forecast, args):
 
     print("." * 108)
     pick = forecast.suggested_target if forecast.abstained else forecast.target
-    result = "NO SIGNAL" if forecast.abstained else "PENDING"
+    result = "ABSTAIN" if forecast.abstained else "PENDING"
     unseen = " ".join("?" for _ in range(args.horizon))
     print(
         f"{'HEAD':>6} {forecast.window_n:>3}  "
@@ -187,13 +187,17 @@ def print_history_continuation(sequence, rows, forecast, args):
         f"{unseen:<15} {result}"
     )
     print("-" * 108)
-    print("Resolved rows reveal their outcomes; HEAD points beyond the dataset and remains pending.")
+    print(
+        "Resolved rows reveal their outcomes; HEAD points beyond the dataset and remains pending."
+    )
 
 
 def print_forecast(learner, args, update_kind="loaded"):
     sequence = learner.history
     print()
-    print(f"Head forecast ({update_kind}) — {datetime.now().isoformat(timespec='seconds')}")
+    print(
+        f"Head forecast ({update_kind}) — {datetime.now().isoformat(timespec='seconds')}"
+    )
     print("=" * 72)
     print(f"Observations available:     {len(sequence)}")
     print(f"Current head index:         {len(sequence) - 1}")
@@ -204,7 +208,9 @@ def print_forecast(learner, args, update_kind="loaded"):
 
     if len(sequence) < args.n_min:
         print(f"Status:                     WAITING")
-        print(f"Reason:                     need {args.n_min - len(sequence)} more observation(s)")
+        print(
+            f"Reason:                     need {args.n_min - len(sequence)} more observation(s)"
+        )
         return
 
     forecast = learner.forecast(force_pick=args.force_pick)
@@ -216,10 +222,11 @@ def print_forecast(learner, args, update_kind="loaded"):
     print(f"Representative N:           {forecast.window_n}")
     print(f"Observed window:            {format_window(sequence, forecast.window_n)}")
     print(
-        "Contributing N values:      "
-        + ", ".join(map(str, forecast.contributing_ns))
+        "Contributing N values:      " + ", ".join(map(str, forecast.contributing_ns))
     )
-    print(f"Ending bit / full streak:   {forecast.features.ending_bit} / {forecast.features.ending_streak_length}")
+    print(
+        f"Ending bit / full streak:   {forecast.features.ending_bit} / {forecast.features.ending_streak_length}"
+    )
     print(f"Local transition rate:      {forecast.features.transition_rate:.2%}")
     print(f"Detected drift:             {forecast.drift_score:.2%}")
     print(f"Estimated P(hit):           {forecast.estimated_probability:.4%}")
@@ -228,8 +235,10 @@ def print_forecast(learner, args, update_kind="loaded"):
     print(f"Context confidence:         {forecast.confidence:.2%}")
 
     if forecast.abstained:
-        print("Status:                     NO SIGNAL")
-        print(f"Best candidate bit:         {forecast.suggested_target} (not actionable)")
+        print("Status:                     ABSTAIN")
+        print(
+            f"Best candidate bit:         {forecast.suggested_target} (not actionable)"
+        )
         print(f"Reason:                     {forecast.reason}")
     else:
         print("Status:                     PREDICTION")
@@ -246,7 +255,9 @@ def print_forecast(learner, args, update_kind="loaded"):
 
 def watch_file(path, learner, args):
     current = list(learner.history)
-    print(f"Watching {Path(path).resolve()} every {args.interval:g}s. Press Ctrl+C to stop.")
+    print(
+        f"Watching {Path(path).resolve()} every {args.interval:g}s. Press Ctrl+C to stop."
+    )
     while True:
         time.sleep(args.interval)
         try:
@@ -256,8 +267,8 @@ def watch_file(path, learner, args):
             continue
         if latest == current:
             continue
-        if len(latest) >= len(current) and latest[:len(current)] == current:
-            added = latest[len(current):]
+        if len(latest) >= len(current) and latest[: len(current)] == current:
+            added = latest[len(current) :]
             learner.extend(added)
             update_kind = f"{len(added)} appended"
         else:
@@ -283,16 +294,34 @@ def main():
     parser.add_argument("--min-lift", type=float, default=0.015)
     parser.add_argument("--ensemble-size", type=int, default=5)
     parser.add_argument("--warmup", type=int, default=100)
-    parser.add_argument("--show-predictions", type=int, default=20, metavar="COUNT",
-                        help="Recent resolved predictions to show; -1 shows all, 0 hides them.")
-    parser.add_argument("--non-overlap", action="store_true",
-                        help="Show conservative historical rows every H observations.")
-    parser.add_argument("--force-pick", action="store_true",
-                        help="Always choose the best bit, even without a validated signal.")
-    parser.add_argument("--watch", action="store_true",
-                        help="Keep watching the file and forecast after appended observations.")
-    parser.add_argument("--interval", type=float, default=2.0,
-                        help="Watch polling interval in seconds (default: 2).")
+    parser.add_argument(
+        "--show-predictions",
+        type=int,
+        default=20,
+        metavar="COUNT",
+        help="Recent resolved predictions to show; -1 shows all, 0 hides them.",
+    )
+    parser.add_argument(
+        "--non-overlap",
+        action="store_true",
+        help="Show conservative historical rows every H observations.",
+    )
+    parser.add_argument(
+        "--force-pick",
+        action="store_true",
+        help="Always choose the best bit, even without a validated signal.",
+    )
+    parser.add_argument(
+        "--watch",
+        action="store_true",
+        help="Keep watching the file and forecast after appended observations.",
+    )
+    parser.add_argument(
+        "--interval",
+        type=float,
+        default=2.0,
+        help="Watch polling interval in seconds (default: 2).",
+    )
     args = parser.parse_args()
     if args.interval <= 0:
         parser.error("interval must be greater than zero")

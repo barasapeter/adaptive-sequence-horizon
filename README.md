@@ -5,7 +5,7 @@ predictive structure in binary sequences. It asks whether `0` or `1` will
 appear at least once in the next `H` observations, conditional on the local
 state visible at prediction time.
 
-The model is deliberately allowed to say **NO SIGNAL**. A high raw hit rate is
+The model is deliberately allowed to say **ABSTAIN**. A high raw hit rate is
 not evidence of skill when `H > 1`; for balanced independent bits, the chance
 that either chosen bit appears within the horizon is already `1 - 0.5^H`.
 The primary diagnostics are therefore lift, Brier skill, log loss,
@@ -71,7 +71,7 @@ The output includes:
 - ending bit and full streak length;
 - drift and transition measurements;
 - selected bit, predicted probability, marginal baseline, and lift; and
-- either `PREDICTION` or `NO SIGNAL`.
+- either `PREDICTION` or `ABSTAIN`.
 
 If the same dataset file later receives more observations, it can optionally be
 watched in place:
@@ -118,7 +118,7 @@ Previous prediction performance:
 --------------------------------------------------------------
 Resolved opportunities:      171
 Predictions made:            52
-No signal / abstained:       119
+ABSTAIN / abstained:       119
 Coverage:                    30.41%
 Hits:                        49
 Misses:                      3
@@ -135,8 +135,8 @@ Resolved predictions and head continuation (3 historical):
   At t   N  Observed window                  Pick   P(hit)     Lift Horizon reveal  Result
 ------------------------------------------------------------------------------------------------------------
    940   4  1101                                1    0.975   +0.020 1 1 1 1 0       HIT
-   945   5  11110                               -        -        - 1 0 1 1 0       NO SIGNAL
-   950   6  010110                              -        -        - 0 1 1 1 0       NO SIGNAL
+   945   5  11110                               -        -        - 1 0 1 1 0       ABSTAIN
+   950   6  010110                              -        -        - 0 1 1 1 0       ABSTAIN
 ............................................................................................................
   HEAD   3  001                                 1    0.976   +0.017 ? ? ? ? ?       PENDING
 ------------------------------------------------------------------------------------------------------------
@@ -184,7 +184,7 @@ not only the few rows printed in the trace. It separates picks of `0` and `1`
 and compares them with the actual horizon turnout rates on exactly the same
 predicted rows. A horizon can contain both bits, so the two turnout percentages
 do not need to sum to 100%. Coverage is shown because success rate excludes
-`NO SIGNAL` opportunities and should not be interpreted without knowing how
+`ABSTAIN` opportunities and should not be interpreted without knowing how
 often the model chose to predict.
 
 `Estimated P(hit)` is the probability that the picked bit appears at least
@@ -196,7 +196,7 @@ difference is `Estimated conditional lift`.
 evidence available for the contributing contexts. It is not the probability
 that the forecast is correct.
 
-When the status is `NO SIGNAL`, `Best candidate bit` is printed for diagnosis
+When the status is `ABSTAIN`, `Best candidate bit` is printed for diagnosis
 but should not be treated as a prediction. `--force-pick` promotes that best
 candidate to an operational pick and prints a warning if normal requirements
 were not satisfied.
@@ -232,7 +232,7 @@ For each newly appended observation, `predict_head.py` performs:
 3. Add only those resolved outcomes to contextual memory.
 4. Record the new head state for resolution after H more observations.
 5. Determine the local-state ensemble and preferred target.
-6. Emit PREDICTION or NO SIGNAL for the future beyond the current head.
+6. Emit PREDICTION or ABSTAIN for the future beyond the current head.
 ```
 
 Stopping and restarting watch mode is safe. The file is replayed chronologically
@@ -323,7 +323,7 @@ its own baseline.
 
 ### 5. Abstention
 
-A forecast becomes **NO SIGNAL** when:
+A forecast becomes **ABSTAIN** when:
 
 - the best context lacks `--min-resolved` effective observations; or
 - estimated lift is below `--min-lift`.
@@ -352,7 +352,7 @@ are supported explicitly:
 - broad run/window backoff remains available when an exact streak state has
   not occurred before.
 
-A constant sequence may still produce **NO SIGNAL** under normal thresholds.
+A constant sequence may still produce **ABSTAIN** under normal thresholds.
 That is intentional: always choosing its dominant bit already has an extremely
 strong marginal baseline, so repeating that baseline is not conditional lift.
 
@@ -365,7 +365,7 @@ The implementation follows this order at every historical position:
 2. Add those resolved candidate outcomes to model memory.
 3. Construct every current local state from history through t only.
 4. Record state keys for later delayed learning.
-5. Produce a forecast or NO SIGNAL.
+5. Produce a forecast or ABSTAIN.
 6. Reveal the future only to score the saved backtest row.
 ```
 
@@ -403,7 +403,7 @@ Example trace:
   At t   N  Observed window                  Pick   P(hit)     Lift Reveal          Result
 ------------------------------------------------------------------------------------------------------------
    124   8  01001110                            1    0.821   +0.047 0 0 1 0         HIT
-   128   5  11111                               -        -        - 1 1 1 1         NO SIGNAL
+   128   5  11111                               -        -        - 1 1 1 1         ABSTAIN
 ............................................................................................................
   HEAD   3  001                                  1    0.976   +0.017 ? ? ? ? ?       PENDING
 ```
@@ -413,7 +413,7 @@ observed window and picked bit are known, but its horizon lies beyond the final
 dataset entry. Question marks represent those unseen observations, and
 `PENDING` cannot become `HIT` or `MISS` until the next `H` values arrive. The
 head ensemble combinations are printed immediately below the trace. If the
-head does not meet evidence requirements, the row says `NO SIGNAL` instead.
+head does not meet evidence requirements, the row says `ABSTAIN` instead.
 
 ## Shuffled-null validation
 
