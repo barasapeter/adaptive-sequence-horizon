@@ -48,13 +48,21 @@ last available entry, use the separate head predictor:
 python predict_head.py dataset/trail-bb4f6830.txt `
   --horizon 5 `
   --n-min 2 `
-  --n-max 30
+  --n-max 30 `
+  --non-overlap `
+  --show-predictions 20
 ```
 
 It treats the file as the complete information currently available. It replays
 that history without look-ahead, learns only from horizons that resolve inside
 the dataset, and forecasts beyond the final entry. The next `H` positions do
 not exist in the input and remain unseen.
+
+The command first prints recent resolved historical predictions with their
+horizon reveals and `HIT`/`MISS` results. It then appends the current `HEAD`
+row. Its reveal contains question marks and remains `PENDING` because those
+observations lie beyond the supplied dataset.
+
 The output includes:
 
 - the current head index;
@@ -105,6 +113,35 @@ Observations available:     959
 Current head index:         958
 Unseen forecast positions:  959 through 963
 Future horizon:             next 5 unseen observations
+
+Previous prediction performance:
+--------------------------------------------------------------
+Resolved opportunities:      171
+Predictions made:            52
+No signal / abstained:       119
+Coverage:                    30.41%
+Hits:                        49
+Misses:                      3
+Overall success rate:        94.23%
+When bit 0 was picked:       21/23 hits (91.30%)
+When bit 1 was picked:       28/29 hits (96.55%)
+Actual horizon turnouts on the same predicted rows:
+  0 appeared:                48/52 (92.31%)
+  1 appeared:                50/52 (96.15%)
+--------------------------------------------------------------
+
+Resolved predictions and head continuation (3 historical):
+------------------------------------------------------------------------------------------------------------
+  At t   N  Observed window                  Pick   P(hit)     Lift Horizon reveal  Result
+------------------------------------------------------------------------------------------------------------
+   940   4  1101                                1    0.975   +0.020 1 1 1 1 0       HIT
+   945   5  11110                               -        -        - 1 0 1 1 0       NO SIGNAL
+   950   6  010110                              -        -        - 0 1 1 1 0       NO SIGNAL
+............................................................................................................
+  HEAD   3  001                                 1    0.976   +0.017 ? ? ? ? ?       PENDING
+------------------------------------------------------------------------------------------------------------
+
+Current head decision:
 Representative N:           3
 Observed window:            001
 Contributing N values:      3, 11, 15, 17, 13
@@ -142,6 +179,14 @@ contributing `N` and the common bit selected by their combined target model.
 When normal signal requirements are not met, the final column is labeled
 `Candidate` and the combined line is explicitly non-actionable.
 
+`Previous prediction performance` uses all eligible resolved historical rows,
+not only the few rows printed in the trace. It separates picks of `0` and `1`
+and compares them with the actual horizon turnout rates on exactly the same
+predicted rows. A horizon can contain both bits, so the two turnout percentages
+do not need to sum to 100%. Coverage is shown because success rate excludes
+`NO SIGNAL` opportunities and should not be interpreted without knowing how
+often the model chose to predict.
+
 `Estimated P(hit)` is the probability that the picked bit appears at least
 once in the next `H` entries. `Marginal baseline P(hit)` is the corresponding
 recent frequency-based probability without local-state conditioning. Their
@@ -170,6 +215,9 @@ were not satisfied.
 | `--decay` | `0.97` | Recency decay applied to resolved outcomes |
 | `--min-lift` | `0.015` | Minimum improvement over baseline required to predict |
 | `--ensemble-size` | `5` | Number of candidate windows combined per target |
+| `--warmup` | `100` | Historical position before displayed predictions begin |
+| `--show-predictions` | `20` | Recent resolved rows before `HEAD`; `-1` all, `0` none |
+| `--non-overlap` | off | Display conservative historical rows every `H` positions |
 | `--watch` | off | Continue watching the file for changes |
 | `--interval` | `2` | Seconds between file checks in watch mode |
 | `--force-pick` | off | Return the best bit even when evidence requirements fail |
