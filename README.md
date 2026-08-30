@@ -1,5 +1,13 @@
 # Adaptive Horizon
 
+```shell
+python run_experiments.py dataset/trail-bb4f6830.txt \
+    --horizon 5 \
+    --n-min 2 \
+    --n-max 30 \
+    --memory 75
+```
+
 **Adaptive Horizon** is an experimental algorithm for discovering and evaluating local predictive structure in binary sequences.
 
 The project explores a simple question:
