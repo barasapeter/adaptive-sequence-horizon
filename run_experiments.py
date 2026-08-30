@@ -10,7 +10,11 @@ from pathlib import Path
 import random
 from statistics import mean
 
-from adaptive_horizon import parse_binary_sequence, walk_forward_backtest
+from adaptive_horizon import (
+    OnlineAdaptiveHorizon,
+    parse_binary_sequence,
+    walk_forward_backtest,
+)
 
 
 def load_sequence(path):
@@ -120,7 +124,24 @@ def calibration_bins(rows):
     ]
 
 
-def print_prediction_trace(sequence, rows, limit):
+def _format_window(sequence, n, width=30):
+    text = "".join(map(str, sequence[-n:]))
+    return text if len(text) <= width else "..." + text[-(width - 3):]
+
+
+def print_head_combinations(sequence, forecast):
+    label = "Candidate" if forecast.abstained else "Pick"
+    print()
+    print("Head ensemble combinations:")
+    print("-" * 62)
+    print(f"{'N':>4}  {'Observed window':<42}  {label:>9}")
+    print("-" * 62)
+    for n in forecast.contributing_ns:
+        print(f"{n:>4}  {_format_window(sequence, n, 42):<42}  {forecast.suggested_target:>9}")
+    print("-" * 62)
+
+
+def print_prediction_trace(sequence, rows, limit, head_forecast, horizon):
     if limit == 0 or not rows:
         return
     displayed = rows if limit < 0 else rows[-limit:]
@@ -150,8 +171,28 @@ def print_prediction_trace(sequence, rows, limit):
             f"{row.index:>6} {row.window_n:>3}  {window_text:<30} {pick:>6} "
             f"{probability:>8} {lift:>8} {future_text:<15} {result}"
         )
+
+    # The final row continues beyond the dataset boundary. Unlike historical
+    # rows, its horizon cannot be revealed until new observations arrive.
+    print("." * 108)
+    if head_forecast.abstained:
+        pick = str(head_forecast.suggested_target)
+        result = "NO SIGNAL"
+    else:
+        pick = str(head_forecast.target)
+        result = "PENDING"
+    probability = f"{head_forecast.estimated_probability:.3f}"
+    lift = f"{head_forecast.lift:+.3f}"
+    unseen = " ".join("?" for _ in range(horizon))
+    window_text = _format_window(sequence, head_forecast.window_n, 30)
+    print(
+        f"{'HEAD':>6} {head_forecast.window_n:>3}  {window_text:<30} {pick:>6} "
+        f"{probability:>8} {lift:>8} {unseen:<15} {result}"
+    )
     print("-" * 108)
+    print("Historical horizons are resolved; HEAD continues into unseen observations.")
     print("Lift is predicted P(hit) minus the target-specific marginal baseline.")
+    print_head_combinations(sequence, head_forecast)
 
 
 def backtest_kwargs(args, horizon):
@@ -169,6 +210,23 @@ def backtest_kwargs(args, horizon):
         "ensemble_size": args.ensemble_size,
         "baseline_memory": args.baseline_memory,
     }
+
+
+def forecast_at_head(sequence, horizon, args):
+    learner = OnlineAdaptiveHorizon(
+        n_min=args.n_min,
+        n_max=args.n_max,
+        horizon=horizon,
+        performance_memory=args.memory,
+        prior_strength=args.prior_strength,
+        min_resolved_per_n=args.min_resolved,
+        decay=args.decay,
+        min_lift=args.min_lift,
+        ensemble_size=args.ensemble_size,
+        baseline_memory=args.baseline_memory,
+    )
+    learner.extend(sequence)
+    return learner.forecast()
 
 
 def shuffled_null(sequence, horizon, args, real_skill):
@@ -245,7 +303,14 @@ def print_result(sequence, horizon, args):
         print(f"Best shuffled Brier skill:   {null_best:+.4%}")
         print(f"Empirical null p-value:      {p_value:.4f}")
 
-    print_prediction_trace(sequence, rows, args.show_predictions)
+    head_forecast = forecast_at_head(sequence, horizon, args)
+    print_prediction_trace(
+        sequence,
+        rows,
+        args.show_predictions,
+        head_forecast,
+        horizon,
+    )
 
 
 def main():

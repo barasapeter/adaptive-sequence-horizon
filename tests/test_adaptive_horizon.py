@@ -2,6 +2,7 @@ import unittest
 
 from adaptive_horizon import (
     AdaptiveHorizon,
+    OnlineAdaptiveHorizon,
     ending_streak,
     parse_binary_sequence,
     state_features,
@@ -69,6 +70,35 @@ class AdaptiveHorizonTests(unittest.TestCase):
     def test_invalid_non_binary_values_are_rejected(self):
         with self.assertRaises(ValueError):
             walk_forward_backtest([0, 1, 2, 0], n_min=1, n_max=1, horizon=1)
+
+    def test_online_learner_forecasts_at_current_head(self):
+        learner = OnlineAdaptiveHorizon(
+            n_min=2,
+            n_max=8,
+            horizon=4,
+            min_resolved_per_n=2,
+            prior_strength=2.0,
+        )
+        learner.extend([0] * 200)
+        forecast = learner.forecast(force_pick=True)
+        self.assertEqual(forecast.index, 199)
+        self.assertEqual(forecast.target, 0)
+        self.assertEqual(forecast.features.ending_streak_length, 200)
+
+    def test_online_pending_records_remain_horizon_bounded(self):
+        learner = OnlineAdaptiveHorizon(n_min=2, n_max=5, horizon=7)
+        learner.extend(([0, 1] * 100))
+        self.assertEqual(len(learner.pending), 7)
+
+    def test_force_pick_is_explicit_when_evidence_is_missing(self):
+        learner = OnlineAdaptiveHorizon(n_min=2, n_max=4, horizon=3)
+        learner.extend([0, 1, 0, 1])
+        cautious = learner.forecast()
+        forced = learner.forecast(force_pick=True)
+        self.assertTrue(cautious.abstained)
+        self.assertFalse(forced.abstained)
+        self.assertIn(forced.target, (0, 1))
+        self.assertTrue(forced.reason.startswith("forced pick"))
 
 
 if __name__ == "__main__":

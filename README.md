@@ -38,6 +38,159 @@ python run_experiments.py dataset/trail-bb4f6830.txt \
 Use `--show-predictions -1` to print every test opportunity, `0` to hide the
 trace, or a positive number to show that many recent opportunities.
 
+## Prediction beyond the dataset head
+
+`run_experiments.py` remains the historical testing tool. To feed one of the
+same dataset files into the trained historical learner and predict beyond its
+last available entry, use the separate head predictor:
+
+```powershell
+python predict_head.py dataset/trail-bb4f6830.txt `
+  --horizon 5 `
+  --n-min 2 `
+  --n-max 30
+```
+
+It treats the file as the complete information currently available. It replays
+that history without look-ahead, learns only from horizons that resolve inside
+the dataset, and forecasts beyond the final entry. The next `H` positions do
+not exist in the input and remain unseen.
+The output includes:
+
+- the current head index;
+- representative and contributing `N` values;
+- the exact observed window;
+- ending bit and full streak length;
+- drift and transition measurements;
+- selected bit, predicted probability, marginal baseline, and lift; and
+- either `PREDICTION` or `NO SIGNAL`.
+
+If the same dataset file later receives more observations, it can optionally be
+watched in place:
+
+```powershell
+python predict_head.py dataset/trail-bb4f6830.txt --horizon 5 --watch --interval 2
+```
+
+On a pure append, only new observations are fed to the in-memory learner. If
+earlier data changes or the file is truncated, the watcher detects that it is
+no longer append-only and safely rebuilds the learner from the new contents.
+
+By default the live command refuses to present a weak candidate as a signal.
+If an external process absolutely requires a `0` or `1` on every invocation,
+use:
+
+```powershell
+python predict_head.py dataset/trail-bb4f6830.txt --horizon 5 --force-pick
+```
+
+Forced output is explicitly marked with a warning when the normal evidence or
+lift requirement was not met. It is the best available candidate, not a
+validated signal. With fewer than `--n-min` observations, no forecast is
+mathematically available even in forced mode.
+
+The live learner retains only recent contextual outcome deques plus the latest
+`H` unresolved state records. A 1,000-observation file is replayed directly;
+after that, append-mode memory does not grow with the full number of historical
+forecast records.
+
+### Understanding `predict_head.py` output
+
+Example:
+
+```text
+Head forecast (loaded)
+========================================================================
+Observations available:     959
+Current head index:         958
+Unseen forecast positions:  959 through 963
+Future horizon:             next 5 unseen observations
+Representative N:           3
+Observed window:            001
+Contributing N values:      3, 11, 15, 17, 13
+Ending bit / full streak:   1 / 1
+Local transition rate:      50.00%
+Detected drift:             6.00%
+Estimated P(hit):           97.6447%
+Marginal baseline P(hit):   95.9547%
+Estimated conditional lift: +1.6900%
+Context confidence:         69.06%
+Status:                     PREDICTION
+Pick bit:                   1
+Prediction:                 bit 1 appears at least once in the next 5 observations
+
+Picked window combinations:
+--------------------------------------------------------------
+   N  Observed window                                  Pick
+--------------------------------------------------------------
+   3  001                                                 1
+  11  11001110001                                         1
+  15  101011001110001                                     1
+  17  11101011001110001                                   1
+  13  1011001110001                                       1
+--------------------------------------------------------------
+Combined forecast: picked bit 1 -> appears within the next 5 unseen observations
+```
+
+`Representative N` is the strongest individual contextual window for display.
+`Contributing N values` are the windows actually combined into the target
+ensemble. The prediction is therefore not based only on the representative
+window.
+
+The `Picked window combinations` table shows the actual suffix used by every
+contributing `N` and the common bit selected by their combined target model.
+When normal signal requirements are not met, the final column is labeled
+`Candidate` and the combined line is explicitly non-actionable.
+
+`Estimated P(hit)` is the probability that the picked bit appears at least
+once in the next `H` entries. `Marginal baseline P(hit)` is the corresponding
+recent frequency-based probability without local-state conditioning. Their
+difference is `Estimated conditional lift`.
+
+`Context confidence` measures the amount of resolved, recency-weighted
+evidence available for the contributing contexts. It is not the probability
+that the forecast is correct.
+
+When the status is `NO SIGNAL`, `Best candidate bit` is printed for diagnosis
+but should not be treated as a prediction. `--force-pick` promotes that best
+candidate to an operational pick and prints a warning if normal requirements
+were not satisfied.
+
+### `predict_head.py` options
+
+| Option | Default | Meaning |
+|---|---:|---|
+| `file` | required | Growing text file containing `0`/`1` or legacy `L`/`P` observations |
+| `--horizon` | `4` | Number of future observations in which the bit must appear |
+| `--n-min` / `--n-max` | `2` / `30` | Candidate local window sizes |
+| `--memory` | `150` | Resolved outcomes retained per contextual state |
+| `--baseline-memory` | `300` | Recent observations used by marginal baselines |
+| `--prior-strength` | `20` | Bayesian shrinkage toward the marginal baseline |
+| `--min-resolved` | `12` | Effective contextual evidence required for a normal signal |
+| `--decay` | `0.97` | Recency decay applied to resolved outcomes |
+| `--min-lift` | `0.015` | Minimum improvement over baseline required to predict |
+| `--ensemble-size` | `5` | Number of candidate windows combined per target |
+| `--watch` | off | Continue watching the file for changes |
+| `--interval` | `2` | Seconds between file checks in watch mode |
+| `--force-pick` | off | Return the best bit even when evidence requirements fail |
+
+### Live operating sequence
+
+For each newly appended observation, `predict_head.py` performs:
+
+```text
+1. Append the new 0 or 1 to visible history.
+2. Resolve old state records whose complete H-step future is now visible.
+3. Add only those resolved outcomes to contextual memory.
+4. Record the new head state for resolution after H more observations.
+5. Determine the local-state ensemble and preferred target.
+6. Emit PREDICTION or NO SIGNAL for the future beyond the current head.
+```
+
+Stopping and restarting watch mode is safe. The file is replayed chronologically
+on startup, reconstructing the same resolved contextual memory before the new
+head forecast is produced.
+
 ## Forecast event
 
 At position `t`, the model sees only:
@@ -203,7 +356,16 @@ Example trace:
 ------------------------------------------------------------------------------------------------------------
    124   8  01001110                            1    0.821   +0.047 0 0 1 0         HIT
    128   5  11111                               -        -        - 1 1 1 1         NO SIGNAL
+............................................................................................................
+  HEAD   3  001                                  1    0.976   +0.017 ? ? ? ? ?       PENDING
 ```
+
+The final `HEAD` row is a continuation of the resolved historical trace. Its
+observed window and picked bit are known, but its horizon lies beyond the final
+dataset entry. Question marks represent those unseen observations, and
+`PENDING` cannot become `HIT` or `MISS` until the next `H` values arrive. The
+head ensemble combinations are printed immediately below the trace. If the
+head does not meet evidence requirements, the row says `NO SIGNAL` instead.
 
 ## Shuffled-null validation
 

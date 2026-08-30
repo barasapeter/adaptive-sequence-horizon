@@ -43,6 +43,7 @@ class Forecast:
     index: int
     window_n: int
     target: Optional[int]
+    suggested_target: int
     estimated_probability: float
     baseline_probability: float
     lift: float
@@ -323,7 +324,11 @@ class AdaptiveHorizon:
             features=features,
         )
 
-    def forecast(self, history: Sequence[int]) -> Forecast:
+    def forecast(
+        self,
+        history: Sequence[int],
+        allow_abstain: bool = True,
+    ) -> Forecast:
         if len(history) < self.n_min:
             raise ValueError("Not enough history.")
 
@@ -378,18 +383,23 @@ class AdaptiveHorizon:
         lift, probability, baseline, confidence, ranked = target_ensembles[target]
         representative = ranked[0]
         enough_evidence = representative.effective_samples >= self.min_resolved_per_n
-        abstained = not enough_evidence or lift < self.min_lift
+        abstained = allow_abstain and (
+            not enough_evidence or lift < self.min_lift
+        )
         if not enough_evidence:
             reason = "insufficient contextual evidence"
         elif lift < self.min_lift:
             reason = "estimated lift below threshold"
         else:
             reason = "signal"
+        if not allow_abstain and reason != "signal":
+            reason = f"forced pick; {reason}"
 
         return Forecast(
             index=len(history) - 1,
             window_n=representative.window_n,
             target=None if abstained else target,
+            suggested_target=target,
             estimated_probability=probability,
             baseline_probability=baseline,
             lift=lift,
@@ -417,6 +427,64 @@ class AdaptiveHorizon:
         outcome = int(bool(hit))
         for key in candidate.state_keys:
             self.outcomes[key].append(outcome)
+
+
+class OnlineAdaptiveHorizon:
+    """Append-only learner that forecasts from the current sequence head.
+
+    Every observed position creates candidate records for later learning. A
+    record is resolved only after all H following observations have arrived.
+    This gives live use the same no-look-ahead guarantee as the backtest.
+    """
+
+    def __init__(self, **model_options):
+        self.model = AdaptiveHorizon(**model_options)
+        self.history: List[int] = []
+        self.pending: List[PendingPrediction] = []
+
+    def observe(self, value: int) -> None:
+        if value not in (0, 1):
+            raise ValueError("Observation must be 0 or 1.")
+
+        index = len(self.history)
+        self.history.append(value)
+        unresolved = []
+        for item in self.pending:
+            if item.resolve_at <= index:
+                future = self.history[
+                    item.made_at + 1:item.made_at + 1 + self.model.horizon
+                ]
+                for candidate in item.candidates:
+                    self.model.update(
+                        candidate,
+                        int(candidate.target in future),
+                    )
+            else:
+                unresolved.append(item)
+        self.pending = unresolved
+
+        if len(self.history) >= self.model.n_min:
+            self.pending.append(
+                PendingPrediction(
+                    made_at=index,
+                    resolve_at=index + self.model.horizon,
+                    candidates=self.model.pending_candidates(self.history),
+                )
+            )
+
+    def extend(self, values: Sequence[int]) -> None:
+        for value in values:
+            self.observe(value)
+
+    def forecast(self, force_pick: bool = False) -> Forecast:
+        if len(self.history) < self.model.n_min:
+            raise ValueError(
+                f"Need at least {self.model.n_min} observations before forecasting."
+            )
+        return self.model.forecast(
+            self.history,
+            allow_abstain=not force_pick,
+        )
 
 
 def walk_forward_backtest(
