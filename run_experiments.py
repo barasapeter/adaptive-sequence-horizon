@@ -30,23 +30,23 @@ def load_sequence(path: str):
 
 
 def constant_target_rate(sequence, target, horizon, warmup, step):
-    wins = 0
+    hits = 0
     total = 0
 
     for t in range(warmup, len(sequence) - horizon, step):
         future = sequence[t + 1 : t + 1 + horizon]
-        wins += int(target in future)
+        hits += int(target in future)
         total += 1
 
-    return wins / total if total else float("nan")
+    return hits / total if total else float("nan")
 
 
 def summarize(rows):
     total = len(rows)
-    wins = sum(r.win for r in rows)
+    hits = sum(r.hit for r in rows)
 
     brier = mean(
-        (r.probability - r.win) ** 2
+        (r.probability - r.hit) ** 2
         for r in rows
     ) if rows else float("nan")
 
@@ -54,14 +54,55 @@ def summarize(rows):
 
     return {
         "predictions": total,
-        "wins": wins,
-        "losses": total - wins,
-        "win_rate": wins / total if total else float("nan"),
+        "hits": hits,
+        "misses": total - hits,
+        "hit_rate": hits / total if total else float("nan"),
         "mean_probability": mean(r.probability for r in rows)
             if rows else float("nan"),
         "brier_score": brier,
         "n_counts": n_counts,
     }
+
+
+def print_prediction_trace(sequence, rows, limit):
+    """Show how each displayed forecast was made and resolved."""
+    if limit == 0 or not rows:
+        return
+
+    displayed = rows if limit < 0 else rows[-limit:]
+
+    print()
+    if len(displayed) < len(rows):
+        print(
+            f"Prediction trace (last {len(displayed)} of {len(rows)}; "
+            "use --show-predictions -1 for all):"
+        )
+    else:
+        print(f"Prediction trace ({len(displayed)} predictions):")
+
+    print("-" * 78)
+    print(
+        f"{'At t':>6}  {'N':>3}  {'Observed window':<30}  "
+        f"{'Pick':>4}  {'Horizon reveal':<16}  Result"
+    )
+    print("-" * 78)
+
+    for row in displayed:
+        window = sequence[row.index - row.window_n + 1 : row.index + 1]
+        window_text = "".join(map(str, window))
+        if len(window_text) > 30:
+            window_text = "..." + window_text[-27:]
+
+        future_text = " ".join(map(str, row.actual_future))
+        result = "HIT" if row.hit else "MISS"
+
+        print(
+            f"{row.index:>6}  {row.window_n:>3}  {window_text:<30}  "
+            f"{row.target:>4}  {future_text:<16}  {result}"
+        )
+
+    print("-" * 78)
+    print("HIT = chosen bit appeared in the horizon reveal; MISS = it did not.")
 
 
 def print_result(sequence, horizon, args):
@@ -101,9 +142,9 @@ def print_result(sequence, horizon, args):
     print(f"Horizon H = {horizon}")
     print("=" * 48)
     print(f"Predictions:              {result['predictions']}")
-    print(f"Wins:                     {result['wins']}")
-    print(f"Losses:                   {result['losses']}")
-    print(f"Adaptive success rate:    {result['win_rate']:.4%}")
+    print(f"Hits:                     {result['hits']}")
+    print(f"Misses:                   {result['misses']}")
+    print(f"Adaptive hit rate:        {result['hit_rate']:.4%}")
     print(f"Always target 0:          {baseline_0:.4%}")
     print(f"Always target 1:          {baseline_1:.4%}")
     print(f"Mean predicted P(hit):    {result['mean_probability']:.4%}")
@@ -113,6 +154,8 @@ def print_result(sequence, horizon, args):
     print("Most selected N values:")
     for n, count in result["n_counts"].most_common(12):
         print(f"  N={n:>2}  {count:>5} selections")
+
+    print_prediction_trace(sequence, rows, args.show_predictions)
 
 
 def main():
@@ -127,6 +170,16 @@ def main():
     parser.add_argument("--prior-strength", type=float, default=25.0)
     parser.add_argument("--min-resolved", type=int, default=10)
     parser.add_argument("--warmup", type=int, default=100)
+    parser.add_argument(
+        "--show-predictions",
+        type=int,
+        default=20,
+        metavar="COUNT",
+        help=(
+            "Number of recent prediction traces to display "
+            "(default: 20; 0 hides them; -1 shows all)."
+        ),
+    )
 
     parser.add_argument(
         "--non-overlap",

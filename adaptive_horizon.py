@@ -57,7 +57,7 @@ class BacktestRow:
     target: int
     probability: float
     actual_future: Tuple[int, ...]
-    win: int
+    hit: int
 
 
 def parse_binary_sequence(text: str) -> List[int]:
@@ -122,14 +122,14 @@ def ending_streak(window: Sequence[int]) -> Tuple[int, int]:
 
 
 def beta_shrunk_probability(
-    wins: int,
+    hits: int,
     trials: int,
     prior_mean: float,
     prior_strength: float,
 ) -> float:
     alpha = prior_mean * prior_strength
     beta = (1.0 - prior_mean) * prior_strength
-    return (wins + alpha) / (trials + alpha + beta)
+    return (hits + alpha) / (trials + alpha + beta)
 
 
 class AdaptiveHorizon:
@@ -196,17 +196,17 @@ class AdaptiveHorizon:
     ) -> Tuple[float, float, int]:
         outcomes = self.recent[n]
         trials = len(outcomes)
-        wins = sum(outcomes)
+        hits = sum(outcomes)
 
         baseline = self.baseline_probability(history, target)
 
         if trials == 0:
             return baseline, baseline, 0
 
-        raw = wins / trials
+        raw = hits / trials
 
         shrunk = beta_shrunk_probability(
-            wins=wins,
+            hits=hits,
             trials=trials,
             prior_mean=baseline,
             prior_strength=self.prior_strength,
@@ -264,8 +264,8 @@ class AdaptiveHorizon:
 
         return best[1]
 
-    def update(self, n: int, win: int) -> None:
-        self.recent[n].append(int(bool(win)))
+    def update(self, n: int, hit: int) -> None:
+        self.recent[n].append(int(bool(hit)))
 
 
 def walk_forward_backtest(
@@ -311,8 +311,8 @@ def walk_forward_backtest(
                     item.made_at + 1 :
                     item.made_at + 1 + horizon
                 ]
-                win = int(item.target in future)
-                model.update(item.window_n, win)
+                hit = int(item.target in future)
+                model.update(item.window_n, hit)
             else:
                 unresolved.append(item)
 
@@ -347,7 +347,7 @@ def walk_forward_backtest(
             seq[t + 1 : t + 1 + horizon]
         )
 
-        win = int(forecast.target in future)
+        hit = int(forecast.target in future)
 
         rows.append(
             BacktestRow(
@@ -356,7 +356,7 @@ def walk_forward_backtest(
                 target=forecast.target,
                 probability=forecast.estimated_probability,
                 actual_future=future,
-                win=win,
+                hit=hit,
             )
         )
 

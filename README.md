@@ -1,5 +1,14 @@
 # Adaptive Horizon
 
+Run:
+```pwsh
+python run_experiments.py dataset/trail-bb4f6830.txt `
+  --horizon 5 `
+  --n-min 2 `
+  --n-max 30 `
+  --memory 75
+```
+
 ```shell
 python run_experiments.py dataset/trail-bb4f6830.txt \
     --horizon 5 \
