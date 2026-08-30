@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 adaptive_horizon.py
-
 Adaptive Horizon
 Peter Barasa
 
